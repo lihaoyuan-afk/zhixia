@@ -1,0 +1,9 @@
+env: load .env.local
+env: export EXPO_PUBLIC_MIMO_API_KEY EXPO_PUBLIC_MIMO_API_URL EXPO_PUBLIC_MIMO_TEXT_MODEL EXPO_PUBLIC_MIMO_VISION_MODEL
+Networking has been disabled
+Starting project at E:\Personal knowledge database
+Metro is running in CI mode, reloads are disabled. Remove CI=true to enable watch mode.
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8081
+Logs for your project will appear below.

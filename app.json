@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "知匣",
+    "slug": "personal-knowledge-database",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F7F9"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "用于选择图片并保存到私人知识库。"
+      }
+    },
+    "android": {
+      "package": "com.personal.knowledge.database",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F6F7F9"
+      },
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "用于选择图片并保存到私人知识库。"
+        }
+      ],
+      "expo-sqlite",
+      "expo-font"
+    ]
+  }
+}

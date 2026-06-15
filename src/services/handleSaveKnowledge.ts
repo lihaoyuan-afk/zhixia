@@ -1,26 +1,11 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { persistImageToDocuments } from "./localImageStorage";
-import { analyzeLocalImage } from "./analyzeLocalImage";
-import { generateKnowledgeMetadata } from "./deepseek";
 import { insertNote } from "./database";
 import type { KnowledgeMetadata } from "../types/note";
 
 type HandleSaveKnowledgeInput = {
   text?: string;
   imageUri?: string;
-};
-
-type HandleSaveKnowledgeOptions = {
-  textApiKey: string;
-  metadataApiUrl?: string;
-  metadataApiUrls?: string[];
-  metadataAuthHeaderName?: "Authorization" | "api-key";
-  metadataModel?: string;
-  visionApiKey?: string;
-  visionApiUrl?: string;
-  visionApiUrls?: string[];
-  visionAuthHeaderName?: "Authorization" | "api-key";
-  visionModel?: string;
 };
 
 function normalizeContent(text: string) {
@@ -82,13 +67,11 @@ function generateLocalMetadata(content: string): KnowledgeMetadata {
 
 export async function handleSaveKnowledge(
   input: HandleSaveKnowledgeInput,
-  options: HandleSaveKnowledgeOptions,
 ): Promise<number> {
   console.log("[handleSaveKnowledge] 开始保存知识");
 
   const userText = input.text?.trim() ?? "";
   let persistentImageUri: string | null = null;
-  let imageText = "";
 
   if (!userText && !input.imageUri) {
     throw new Error("文本和图片至少需要提供一个。");
@@ -102,47 +85,15 @@ export async function handleSaveKnowledge(
         ? input.imageUri
         : await persistImageToDocuments(input.imageUri);
     console.log("[handleSaveKnowledge] 图片已保存到持久化目录", persistentImageUri);
-
-    console.log("[handleSaveKnowledge] 开始分析本地图片");
-    try {
-      imageText = await analyzeLocalImage(persistentImageUri, {
-        apiKey: options.visionApiKey,
-        apiUrl: options.visionApiUrl,
-        apiUrls: options.visionApiUrls,
-        authHeaderName: options.visionAuthHeaderName,
-        model: options.visionModel,
-      });
-      console.log("[handleSaveKnowledge] 图片文本分析完成");
-    } catch (error) {
-      console.log("[handleSaveKnowledge] 图片分析失败，改为仅保存图片", error);
-      imageText = "图片已保存到本地，但视觉模型暂时无法连接，未完成图片内容识别。";
-    }
   }
 
-  const contentParts = [
+  const finalContent = [
     userText ? `用户输入：\n${userText}` : "",
-    imageText ? `图片识别与分析：\n${imageText}` : "",
-  ].filter(Boolean);
+    persistentImageUri && !userText ? "图片已保存到本地。" : "",
+  ].filter(Boolean).join("\n\n");
 
-  const finalContent = contentParts.join("\n\n");
-
-  console.log("[handleSaveKnowledge] 开始生成知识元数据");
-  let metadata: KnowledgeMetadata;
-
-  try {
-    metadata = await generateKnowledgeMetadata(finalContent, {
-      apiKey: options.textApiKey,
-      apiUrl: options.metadataApiUrl,
-      apiUrls: options.metadataApiUrls,
-      authHeaderName: options.metadataAuthHeaderName,
-      model: options.metadataModel,
-    });
-  } catch (error) {
-    console.log("[handleSaveKnowledge] 文本模型失败，使用本地元数据兜底", error);
-    metadata = generateLocalMetadata(finalContent);
-  }
-
-  console.log("[handleSaveKnowledge] 元数据生成完成", metadata);
+  console.log("[handleSaveKnowledge] 生成本地元数据");
+  const metadata = generateLocalMetadata(finalContent);
 
   console.log("[handleSaveKnowledge] 开始写入 SQLite");
   const noteId = await insertNote({

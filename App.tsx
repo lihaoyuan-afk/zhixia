@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import Feather from "@expo/vector-icons/Feather";
-import { AI_CONFIG } from "./src/config/aiConfig";
 import { KnowledgeCardList } from "./src/components/KnowledgeCardList";
 import { useLocalImage } from "./src/hooks/useLocalImage";
 import { getAllNotes, searchNotes } from "./src/services/database";
@@ -130,24 +129,10 @@ export default function App() {
     setStatusText("正在整理知识...");
 
     try {
-      const noteId = await handleSaveKnowledge(
-        {
-          text: manualText,
-          imageUri: selectedImageUri ?? undefined,
-        },
-        {
-          textApiKey: AI_CONFIG.textApiKey,
-          metadataApiUrl: AI_CONFIG.textApiUrl,
-          metadataApiUrls: AI_CONFIG.textApiUrls,
-          metadataAuthHeaderName: AI_CONFIG.authHeaderName,
-          metadataModel: AI_CONFIG.textModel,
-          visionApiKey: AI_CONFIG.visionApiKey,
-          visionApiUrl: AI_CONFIG.visionApiUrl,
-          visionApiUrls: AI_CONFIG.visionApiUrls,
-          visionAuthHeaderName: AI_CONFIG.authHeaderName,
-          visionModel: AI_CONFIG.visionModel,
-        },
-      );
+      const noteId = await handleSaveKnowledge({
+        text: manualText,
+        imageUri: selectedImageUri ?? undefined,
+      });
 
       console.log("[App] 保存成功", noteId);
       setManualText("");

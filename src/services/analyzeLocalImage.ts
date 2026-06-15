@@ -1,6 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 
-const DEFAULT_VISION_MODEL = "mimo-v2-omni";
+const DEFAULT_VISION_MODEL = "gpt-4o";
 
 type AnalyzeLocalImageOptions = {
   apiKey?: string;

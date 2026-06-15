@@ -7,3 +7,13 @@ yarn-error.log*
 .env
 .env.*
 
+# IBKR test files
+ibkr_*.json
+ibkr_*.pdf
+
+# Expo run logs / test payloads
+.expo-run/
+
+# Local test runs
+codex-pet-memo-run/
+

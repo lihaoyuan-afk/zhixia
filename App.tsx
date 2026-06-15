@@ -15,62 +15,28 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import Feather from "@expo/vector-icons/Feather";
+import { AI_CONFIG } from "./src/config/aiConfig";
 import { KnowledgeCardList } from "./src/components/KnowledgeCardList";
 import { useLocalImage } from "./src/hooks/useLocalImage";
-import { getAllNotes } from "./src/services/database";
+import { getAllNotes, searchNotes } from "./src/services/database";
 import { handleSaveKnowledge } from "./src/services/handleSaveKnowledge";
 import type { NoteViewModel } from "./src/types/note";
-
-const DEFAULT_QWEN_API_URL =
-  "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-const DEFAULT_MIMO_API_URL = "https://api.mimo-v2.com/v1/chat/completions";
-const DEFAULT_TEXT_MODEL = "mimo-v2-pro";
-const DEFAULT_VISION_MODEL = "mimo-v2-omni";
-const ENV_TEXT_API_KEY =
-  process.env.EXPO_PUBLIC_TEXT_API_KEY ??
-  process.env.EXPO_PUBLIC_MIMO_API_KEY ??
-  process.env.EXPO_PUBLIC_DEEPSEEK_API_KEY ??
-  "";
-const ENV_TEXT_API_URL =
-  process.env.EXPO_PUBLIC_TEXT_API_URL ??
-  process.env.EXPO_PUBLIC_MIMO_API_URL ??
-  DEFAULT_MIMO_API_URL;
-const ENV_TEXT_MODEL =
-  process.env.EXPO_PUBLIC_TEXT_MODEL ??
-  process.env.EXPO_PUBLIC_MIMO_TEXT_MODEL ??
-  DEFAULT_TEXT_MODEL;
-const ENV_VISION_API_KEY =
-  process.env.EXPO_PUBLIC_VISION_API_KEY ??
-  process.env.EXPO_PUBLIC_MIMO_API_KEY ??
-  process.env.EXPO_PUBLIC_QWEN_API_KEY ??
-  "";
-const ENV_VISION_API_URL =
-  process.env.EXPO_PUBLIC_VISION_API_URL ??
-  process.env.EXPO_PUBLIC_MIMO_API_URL ??
-  process.env.EXPO_PUBLIC_QWEN_API_URL ??
-  DEFAULT_MIMO_API_URL;
-const ENV_VISION_MODEL =
-  process.env.EXPO_PUBLIC_VISION_MODEL ??
-  process.env.EXPO_PUBLIC_MIMO_VISION_MODEL ??
-  DEFAULT_VISION_MODEL;
 
 function extractSummary(content: string) {
   const match = content.match(/^AI摘要：(.+?)(?:\n|$)/);
   return match?.[1]?.trim() || content.replace(/^AI摘要：/, "").trim();
 }
 
+function extractBody(content: string) {
+  return content.replace(/^AI摘要：.+?(?:\n\n|\n|$)/, "").trim();
+}
+
 export default function App() {
   const [manualText, setManualText] = useState("");
-  const [textApiKey, setTextApiKey] = useState(ENV_TEXT_API_KEY);
-  const [textApiUrl, setTextApiUrl] = useState(ENV_TEXT_API_URL);
-  const [textModel, setTextModel] = useState(ENV_TEXT_MODEL);
-  const [visionApiKey, setVisionApiKey] = useState(ENV_VISION_API_KEY);
-  const [visionApiUrl, setVisionApiUrl] = useState(ENV_VISION_API_URL);
-  const [visionModel, setVisionModel] = useState(ENV_VISION_MODEL);
-  const [showApiSettings, setShowApiSettings] = useState(
-    !ENV_TEXT_API_KEY || !ENV_VISION_API_KEY,
-  );
   const [notes, setNotes] = useState<NoteViewModel[]>([]);
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("全部");
+  const [selectedNote, setSelectedNote] = useState<NoteViewModel | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [statusText, setStatusText] = useState("准备记录新的知识。");
@@ -78,14 +44,41 @@ export default function App() {
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
 
   const canSave = useMemo(
-    () => Boolean(manualText.trim() || selectedImageUri) && Boolean(textApiKey.trim()),
-    [manualText, selectedImageUri, textApiKey],
+    () => Boolean(manualText.trim() || selectedImageUri),
+    [manualText, selectedImageUri],
   );
+
+  const categories = useMemo(() => {
+    const counts = notes.reduce<Record<string, number>>((result, note) => {
+      const category = note.category || "未分类";
+      result[category] = (result[category] ?? 0) + 1;
+      return result;
+    }, {});
+
+    return [
+      { name: "全部", count: notes.length },
+      ...Object.entries(counts).map(([name, count]) => ({ name, count })),
+    ];
+  }, [notes]);
+
+  const visibleNotes = useMemo(() => {
+    if (selectedCategory === "全部") {
+      return notes;
+    }
+
+    return notes.filter((note) => (note.category || "未分类") === selectedCategory);
+  }, [notes, selectedCategory]);
+
+  const totalTags = useMemo(() => {
+    return new Set(notes.flatMap((note) => note.tags)).size;
+  }, [notes]);
 
   const refreshNotes = useCallback(async () => {
     setIsLoadingNotes(true);
     try {
-      const latestNotes = await getAllNotes();
+      const latestNotes = searchKeyword.trim()
+        ? await searchNotes(searchKeyword)
+        : await getAllNotes();
       setNotes(latestNotes);
     } catch (error) {
       console.log("[App] 加载笔记失败", error);
@@ -93,25 +86,20 @@ export default function App() {
     } finally {
       setIsLoadingNotes(false);
     }
-  }, []);
+  }, [searchKeyword]);
 
   useEffect(() => {
     refreshNotes();
   }, [refreshNotes]);
 
   useEffect(() => {
-    if (ENV_TEXT_API_KEY) {
-      setTextApiKey(ENV_TEXT_API_KEY);
-      setTextApiUrl(ENV_TEXT_API_URL);
-      setTextModel(ENV_TEXT_MODEL);
+    if (
+      selectedCategory !== "全部" &&
+      !categories.some((category) => category.name === selectedCategory)
+    ) {
+      setSelectedCategory("全部");
     }
-
-    if (ENV_VISION_API_KEY) {
-      setVisionApiKey(ENV_VISION_API_KEY);
-      setVisionApiUrl(ENV_VISION_API_URL);
-      setVisionModel(ENV_VISION_MODEL);
-    }
-  }, []);
+  }, [categories, selectedCategory]);
 
   useEffect(() => {
     if (imageUri) {
@@ -138,16 +126,6 @@ export default function App() {
   }, [pickImage]);
 
   const handleSave = useCallback(async () => {
-    if (!textApiKey.trim()) {
-      Alert.alert("缺少文本模型 Key", "请先配置文本模型 API Key。");
-      return;
-    }
-
-    if (selectedImageUri && !visionApiKey.trim()) {
-      Alert.alert("缺少视觉模型 Key", "保存图片知识需要配置视觉模型 API Key。");
-      return;
-    }
-
     setIsSaving(true);
     setStatusText("正在整理知识...");
 
@@ -158,14 +136,16 @@ export default function App() {
           imageUri: selectedImageUri ?? undefined,
         },
         {
-          deepSeekApiKey: textApiKey.trim(),
-          metadataApiUrl: textApiUrl.trim() || DEFAULT_MIMO_API_URL,
-          metadataAuthHeaderName: "api-key",
-          metadataModel: textModel.trim() || DEFAULT_TEXT_MODEL,
-          qwenApiKey: visionApiKey.trim() || undefined,
-          qwenApiUrl: visionApiUrl.trim() || DEFAULT_QWEN_API_URL,
-          qwenAuthHeaderName: "api-key",
-          qwenModel: visionModel.trim() || DEFAULT_VISION_MODEL,
+          textApiKey: AI_CONFIG.textApiKey,
+          metadataApiUrl: AI_CONFIG.textApiUrl,
+          metadataApiUrls: AI_CONFIG.textApiUrls,
+          metadataAuthHeaderName: AI_CONFIG.authHeaderName,
+          metadataModel: AI_CONFIG.textModel,
+          visionApiKey: AI_CONFIG.visionApiKey,
+          visionApiUrl: AI_CONFIG.visionApiUrl,
+          visionApiUrls: AI_CONFIG.visionApiUrls,
+          visionAuthHeaderName: AI_CONFIG.authHeaderName,
+          visionModel: AI_CONFIG.visionModel,
         },
       );
 
@@ -185,13 +165,74 @@ export default function App() {
     manualText,
     refreshNotes,
     selectedImageUri,
-    textApiKey,
-    textApiUrl,
-    textModel,
-    visionApiKey,
-    visionApiUrl,
-    visionModel,
   ]);
+
+  if (selectedNote) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.detailPageHeader}>
+          <Pressable
+            accessibilityLabel="返回知识列表"
+            onPress={() => setSelectedNote(null)}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          >
+            <Feather name="arrow-left" size={22} color="#0F172A" />
+          </Pressable>
+          <Text numberOfLines={1} style={styles.detailPageHeaderTitle}>
+            知识详情
+          </Text>
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.detailPageContent}
+        >
+          <Text style={styles.detailPageTitle}>{selectedNote.title}</Text>
+
+          <View style={styles.detailMetaRow}>
+            <Text style={styles.detailCategory}>
+              {selectedNote.category || "未分类"}
+            </Text>
+            <Text style={styles.detailDate}>
+              {selectedNote.created_at
+                ? new Date(selectedNote.created_at).toLocaleString()
+                : ""}
+            </Text>
+          </View>
+
+          {selectedNote.image_path ? (
+            <Image source={{ uri: selectedNote.image_path }} style={styles.detailPageImage} />
+          ) : null}
+
+          <View style={styles.detailBlock}>
+            <Text style={styles.detailSectionTitle}>AI 摘要</Text>
+            <Text style={styles.detailSummary}>{extractSummary(selectedNote.content)}</Text>
+          </View>
+
+          {selectedNote.tags.length ? (
+            <View style={styles.detailBlock}>
+              <Text style={styles.detailSectionTitle}>标签</Text>
+              <View style={styles.detailTags}>
+                {selectedNote.tags.map((tag) => (
+                  <Text key={tag} style={styles.detailTag}>
+                    #{tag}
+                  </Text>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.detailBlock}>
+            <Text style={styles.detailSectionTitle}>完整内容</Text>
+            <Text selectable style={styles.detailContent}>
+              {extractBody(selectedNote.content)}
+            </Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -207,81 +248,6 @@ export default function App() {
           <View style={styles.header}>
             <Text style={styles.appTitle}>知匣</Text>
             <Text style={styles.appSubtitle}>文字、图片、AI 整理，一次存好。</Text>
-          </View>
-
-          <View style={styles.panel}>
-            <View style={styles.panelHeader}>
-              <Feather name="key" size={18} color="#2563EB" />
-              <Text style={styles.panelTitle}>API 配置</Text>
-              <Pressable
-                onPress={() => setShowApiSettings((value) => !value)}
-                style={({ pressed }) => [styles.smallButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.smallButtonText}>
-                  {showApiSettings ? "收起" : "设置"}
-                </Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.configStatus}>
-              文本模型：{textApiKey ? "已配置" : "未配置"} · 视觉模型：
-              {visionApiKey ? "已配置" : "未配置"}
-            </Text>
-
-            {showApiSettings ? (
-              <>
-                <TextInput
-                  value={textApiKey}
-                  onChangeText={setTextApiKey}
-                  placeholder="文本模型 API Key，必填"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  style={styles.input}
-                />
-                <TextInput
-                  value={textApiUrl}
-                  onChangeText={setTextApiUrl}
-                  placeholder="文本模型 API URL"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="none"
-                  style={styles.input}
-                />
-                <TextInput
-                  value={textModel}
-                  onChangeText={setTextModel}
-                  placeholder="文本模型名称"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="none"
-                  style={styles.input}
-                />
-                <TextInput
-                  value={visionApiKey}
-                  onChangeText={setVisionApiKey}
-                  placeholder="视觉模型 API Key，图片分析时必填"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  style={styles.input}
-                />
-                <TextInput
-                  value={visionApiUrl}
-                  onChangeText={setVisionApiUrl}
-                  placeholder="视觉模型 API URL"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="none"
-                  style={styles.input}
-                />
-                <TextInput
-                  value={visionModel}
-                  onChangeText={setVisionModel}
-                  placeholder="视觉模型名称"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="none"
-                  style={styles.input}
-                />
-              </>
-            ) : null}
           </View>
 
           <View style={styles.panel}>
@@ -349,7 +315,7 @@ export default function App() {
           </View>
 
           <View style={styles.listHeader}>
-            <Text style={styles.sectionTitle}>知识列表</Text>
+            <Text style={styles.sectionTitle}>检索与归纳</Text>
             <Pressable
               accessibilityLabel="刷新列表"
               onPress={refreshNotes}
@@ -363,18 +329,93 @@ export default function App() {
             </Pressable>
           </View>
 
-          {notes.length > 0 ? (
+          <View style={styles.searchPanel}>
+            <View style={styles.searchBox}>
+              <Feather name="search" size={18} color="#64748B" />
+              <TextInput
+                value={searchKeyword}
+                onChangeText={setSearchKeyword}
+                placeholder="搜索标题或正文"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                returnKeyType="search"
+                onSubmitEditing={refreshNotes}
+                style={styles.searchInput}
+              />
+              {searchKeyword ? (
+                <Pressable
+                  accessibilityLabel="清空搜索"
+                  onPress={() => setSearchKeyword("")}
+                  style={styles.clearButton}
+                >
+                  <Feather name="x" size={16} color="#64748B" />
+                </Pressable>
+              ) : null}
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryStrip}
+            >
+              {categories.map((category) => {
+                const isActive = category.name === selectedCategory;
+
+                return (
+                  <Pressable
+                    key={category.name}
+                    onPress={() => setSelectedCategory(category.name)}
+                    style={[
+                      styles.categoryChip,
+                      isActive && styles.categoryChipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        isActive && styles.categoryChipTextActive,
+                      ]}
+                    >
+                      {category.name} {category.count}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{notes.length}</Text>
+                <Text style={styles.statLabel}>当前结果</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{Math.max(categories.length - 1, 0)}</Text>
+                <Text style={styles.statLabel}>分类</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{totalTags}</Text>
+                <Text style={styles.statLabel}>标签</Text>
+              </View>
+            </View>
+          </View>
+
+          {visibleNotes.length > 0 ? (
             <View style={styles.listShell}>
-              <KnowledgeCardList notes={notes} getSummary={(note) => extractSummary(note.content)} />
+              <KnowledgeCardList
+                notes={visibleNotes}
+                getSummary={(note) => extractSummary(note.content)}
+                onPressNote={setSelectedNote}
+              />
             </View>
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>还没有知识卡片</Text>
-              <Text style={styles.emptyText}>保存第一条内容后，它会出现在这里。</Text>
+              <Text style={styles.emptyTitle}>没有匹配的知识卡片</Text>
+              <Text style={styles.emptyText}>换个关键词或分类试试。</Text>
             </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
     </SafeAreaView>
   );
 }
@@ -536,6 +577,80 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  searchPanel: {
+    marginBottom: 12,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#DDE3EA",
+    padding: 12,
+  },
+  searchBox: {
+    minHeight: 46,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    color: "#0F172A",
+    fontSize: 14,
+  },
+  clearButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  categoryStrip: {
+    gap: 8,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  categoryChip: {
+    minHeight: 34,
+    justifyContent: "center",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#F1F5F9",
+  },
+  categoryChipActive: {
+    backgroundColor: "#2563EB",
+  },
+  categoryChipText: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  categoryChipTextActive: {
+    color: "#FFFFFF",
+  },
+  statsGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10,
+  },
+  statItem: {
+    flex: 1,
+    borderRadius: 8,
+    backgroundColor: "#F8FAFC",
+    padding: 10,
+  },
+  statValue: {
+    color: "#0F172A",
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  statLabel: {
+    marginTop: 2,
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   sectionTitle: {
     color: "#0F172A",
     fontSize: 18,
@@ -572,5 +687,108 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 14,
     lineHeight: 20,
+  },
+  detailPageHeader: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#DDE3EA",
+    backgroundColor: "#FFFFFF",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F9",
+  },
+  detailPageHeaderTitle: {
+    flex: 1,
+    color: "#0F172A",
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: "900",
+  },
+  detailPageContent: {
+    padding: 18,
+    paddingBottom: 42,
+  },
+  detailPageTitle: {
+    color: "#0F172A",
+    fontSize: 25,
+    lineHeight: 34,
+    fontWeight: "900",
+  },
+  detailMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  detailCategory: {
+    overflow: "hidden",
+    borderRadius: 6,
+    backgroundColor: "#E8F1FF",
+    color: "#1D4ED8",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  detailDate: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  detailPageImage: {
+    width: "100%",
+    height: 240,
+    borderRadius: 8,
+    marginTop: 16,
+    backgroundColor: "#E2E8F0",
+  },
+  detailBlock: {
+    marginTop: 16,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#DDE3EA",
+    padding: 14,
+  },
+  detailSectionTitle: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  detailSummary: {
+    marginTop: 8,
+    color: "#334155",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  detailTags: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  detailTag: {
+    borderRadius: 6,
+    backgroundColor: "#F1F5F9",
+    color: "#475569",
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  detailContent: {
+    marginTop: 8,
+    color: "#334155",
+    fontSize: 15,
+    lineHeight: 24,
   },
 });

@@ -3,6 +3,7 @@ import {
   FlatList,
   Image,
   ListRenderItem,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -16,6 +17,7 @@ type KnowledgeCardItem = NoteViewModel & {
 type KnowledgeCardListProps = {
   notes: KnowledgeCardItem[];
   getSummary?: (note: KnowledgeCardItem) => string;
+  onPressNote?: (note: KnowledgeCardItem) => void;
 };
 
 const CATEGORY_COLORS: Record<string, { background: string; text: string }> = {
@@ -53,13 +55,20 @@ function getCategoryColor(category?: string | null) {
   return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
 }
 
-export function KnowledgeCardList({ notes, getSummary }: KnowledgeCardListProps) {
+export function KnowledgeCardList({
+  notes,
+  getSummary,
+  onPressNote,
+}: KnowledgeCardListProps) {
   const renderItem: ListRenderItem<KnowledgeCardItem> = ({ item }) => {
     const categoryColor = getCategoryColor(item.category);
     const summary = item.summary ?? getSummary?.(item) ?? item.content;
 
     return (
-      <View style={styles.card}>
+      <Pressable
+        onPress={() => onPressNote?.(item)}
+        style={({ pressed }) => [styles.card, pressed && styles.pressedCard]}
+      >
         {item.image_path ? (
           <Image source={{ uri: item.image_path }} style={styles.thumbnail} />
         ) : (
@@ -87,9 +96,14 @@ export function KnowledgeCardList({ notes, getSummary }: KnowledgeCardListProps)
                 {item.category || "未分类"}
               </Text>
             </View>
+            {item.tags.slice(0, 2).map((tag) => (
+              <Text key={tag} numberOfLines={1} style={styles.tagText}>
+                #{tag}
+              </Text>
+            ))}
           </View>
         </View>
-      </View>
+      </Pressable>
     );
   };
 
@@ -122,6 +136,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 2,
+  },
+  pressedCard: {
+    opacity: 0.82,
   },
   thumbnail: {
     width: 116,
@@ -158,6 +175,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
   },
   categoryBadge: {
     minHeight: 26,
@@ -169,5 +187,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
+  },
+  tagText: {
+    flexShrink: 1,
+    color: "#64748B",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
   },
 });

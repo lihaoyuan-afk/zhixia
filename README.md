@@ -46,15 +46,24 @@ npx eas-cli build --platform android --profile production
 - `src/services/handleSaveKnowledge.ts`：串联图片持久化、图片识别、DeepSeek 元数据生成和 SQLite 写入。
 - `src/components/KnowledgeCardList.tsx`：使用 `FlatList` 渲染知识卡片列表。
 
-## API Key
+## 当前功能
 
-复制 `.env.local.example` 为 `.env.local`，填入你的密钥。当前项目已配置为优先使用小米 MiMo：
+- 保存文字、图片，自动生成标题、摘要、分类和标签。
+- 搜索标题与正文。
+- 按分类筛选，并显示当前结果、分类数、标签数。
+- 点击知识卡片进入完整详情页，包括 AI 摘要、标签、原文和图片。
+
+## AI 配置
+
+发布版 App 已内置小米 MiMo 配置，手机端不会展示 API 配置入口，也不需要手动填写 Key。
+
+开发调试时也可以复制 `.env.local.example` 为 `.env.local`，填入你的密钥：
 
 ```bash
 EXPO_PUBLIC_MIMO_API_KEY=your_mimo_api_key_here
-EXPO_PUBLIC_MIMO_API_URL=https://api.mimo-v2.com/v1/chat/completions
+EXPO_PUBLIC_MIMO_API_URL=https://token-plan-cn.xiaomimimo.com/v1/chat/completions
 EXPO_PUBLIC_MIMO_TEXT_MODEL=mimo-v2-pro
 EXPO_PUBLIC_MIMO_VISION_MODEL=mimo-v2-omni
 ```
 
-App 会自动读取 `.env.local`，首页只显示“已配置/未配置”。如果需要临时修改，点首页 API 配置里的“设置”。
+正式 APK 需要重新构建后才会包含最新配置。

@@ -6,9 +6,28 @@ const DEEPSEEK_METADATA_API_URL = "https://api.deepseek.com/chat/completions";
 type DeepSeekOptions = {
   apiKey: string;
   apiUrl?: string;
+  apiUrls?: string[];
   authHeaderName?: "Authorization" | "api-key";
   model?: string;
 };
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs = 35000,
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function parseJsonObject(text: string): KnowledgeAnalysis {
   const trimmed = text.trim();
@@ -106,41 +125,70 @@ export async function generateKnowledgeMetadata(
     throw new Error("文本模型 API Key 不能为空。");
   }
 
-  const apiUrl = options.apiUrl ?? DEEPSEEK_METADATA_API_URL;
+  const apiUrls = options.apiUrls?.length
+    ? options.apiUrls
+    : [options.apiUrl ?? DEEPSEEK_METADATA_API_URL];
   const model = options.model ?? "deepseek-chat";
 
   console.log("[generateKnowledgeMetadata] 开始请求文本模型", {
-    apiUrl,
+    apiUrl: apiUrls[0],
     model,
   });
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.authHeaderName === "api-key"
-        ? { "api-key": options.apiKey }
-        : { Authorization: `Bearer ${options.apiKey}` }),
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content:
-            "你是一个私人知识库管家。请对用户输入的内容进行结构化提取。必须返回且仅返回一个合法的 JSON，字段包含：title（提取一个吸引人的标题）、summary（一句话总结）、category（从 工作、生活、学习、灵感 中选一个或自创一个）、tags（字符串数组格式的标签）。",
-        },
-        {
-          role: "user",
-          content: rawText,
-        },
-      ],
-    }),
+
+  const requestBody = JSON.stringify({
+    model,
+    temperature: 0.2,
+    messages: [
+      {
+        role: "system",
+        content:
+          "你是一个只输出 JSON 的私人知识库元数据分类器。你的任务是给输入内容做元数据，不是回答、扩写、教学或续写用户内容。输出必须是一个 JSON 对象，字段只能包含：title、summary、category、tags。title 是吸引人的标题；summary 是一句话总结；category 从 工作、生活、学习、灵感 中选一个或自创一个；tags 必须是字符串数组。禁止输出 Markdown，禁止解释。",
+      },
+      {
+        role: "user",
+        content: `请为下面内容生成元数据。不要回答内容本身。只输出 JSON，格式严格为：{"title":"","summary":"","category":"","tags":[""]}\n<content>\n${rawText}\n</content>`,
+      },
+    ],
   });
+
+  let response: Response | null = null;
+  let usedApiUrl = "";
+  let lastNetworkError: unknown = null;
+
+  for (const apiUrl of apiUrls) {
+    usedApiUrl = apiUrl;
+
+    try {
+      response = await fetchWithTimeout(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.authHeaderName === "api-key"
+            ? { "api-key": options.apiKey }
+            : { Authorization: `Bearer ${options.apiKey}` }),
+        },
+        body: requestBody,
+      });
+      break;
+    } catch (error) {
+      lastNetworkError = error;
+      console.log("[generateKnowledgeMetadata] 文本模型网络请求失败，尝试下一个地址", {
+        apiUrl,
+      });
+    }
+  }
+
+  if (!response) {
+    throw new Error(
+      `文本模型网络请求失败：${lastNetworkError instanceof Error ? lastNetworkError.message : "无法连接模型服务"}`,
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`文本模型元数据生成失败：${response.status} ${errorText}`);
+    throw new Error(
+      `文本模型元数据生成失败：${response.status}，接口：${usedApiUrl}，返回：${errorText}`,
+    );
   }
 
   const data = await response.json();
